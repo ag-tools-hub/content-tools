@@ -18,11 +18,94 @@
 <script type="text/babel">
 const { useState, useEffect } = React;
 
-// ── localStorage helpers ───────────────────────────────────────────
-const store = {
-  get: (key) => { try { const v = localStorage.getItem(key); return v ? { value: v } : null; } catch { return null; } },
-  set: (key, value) => { try { localStorage.setItem(key, value); } catch {} },
-};
+// ── Google Sheets memory config ────────────────────────────────────
+const SHEET_ID   = "1QDjlz3yBSmM5FvZR06i_hpQeTiCg0Gk_nONqv5wHSTY";
+const API_KEY    = "AIzaSyDjIb2HbC8MzwZ3V5KT21Ng7N5x5cYzR6Q";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxsRlwcKuzLs1fvLyPA3W20LVpcWkeu1d27OO9njUnxaAEijaNRsAg60PVUpA-KqG28/exec";
+
+// Read all rows from a sheet tab → returns array of row arrays
+async function sheetRead(tabName) {
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(tabName)}?key=${API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    return data.values || [];
+  } catch { return []; }
+}
+
+// Write a new row to a sheet tab via Apps Script
+async function sheetAppend(tabName, row) {
+  try {
+    await fetch(SCRIPT_URL, {
+      method: "POST",
+      body: JSON.stringify({ sheet: tabName, row }),
+    });
+  } catch {}
+}
+
+// ── SOCIAL memory ─────────────────────────────────────────────────
+// { normalisedUrl: "Regular post on 3 Apr 2026" }
+async function loadSocialUrlHistory() {
+  const rows = await sheetRead("social_url_history");
+  const h = {};
+  rows.slice(1).forEach(r => {
+    if(r[0]) h[r[0]] = r[3] ? `${r[1]} on ${r[3]}` : (r[1] || "");
+  });
+  try { const v = localStorage.getItem("social_url_history"); if(v) Object.assign(h, JSON.parse(v)); } catch {}
+  return h;
+}
+
+async function saveSocialUrlHistory(url, postType, date) {
+  await sheetAppend("social_url_history", [url, postType, "social", date]);
+  try {
+    const v = localStorage.getItem("social_url_history");
+    const h = v ? JSON.parse(v) : {};
+    h[url] = `${postType} on ${date}`;
+    localStorage.setItem("social_url_history", JSON.stringify(h));
+  } catch {}
+}
+
+// ── NEWSLETTER memory ─────────────────────────────────────────────
+// { normalisedUrl: "March" }
+async function loadNewsletterUrlHistory() {
+  const rows = await sheetRead("newsletter_url_history");
+  const h = {};
+  rows.slice(1).forEach(r => { if(r[0]) h[r[0]] = r[1] || ""; });
+  try { const v = localStorage.getItem("newsletter_url_history"); if(v) Object.assign(h, JSON.parse(v)); } catch {}
+  return h;
+}
+
+async function saveNewsletterUrlHistory(urls, month) {
+  for(const url of urls) {
+    await sheetAppend("newsletter_url_history", [url, month, "newsletter"]);
+  }
+  try {
+    const v = localStorage.getItem("newsletter_url_history");
+    const h = v ? JSON.parse(v) : {};
+    urls.forEach(u => { h[u] = month; });
+    localStorage.setItem("newsletter_url_history", JSON.stringify(h));
+  } catch {}
+}
+
+// ── TESTIMONIAL memory ────────────────────────────────────────────
+// { "name||company": "Month" }
+async function loadTestHistory() {
+  const rows = await sheetRead("test_history");
+  const h = {};
+  rows.slice(1).forEach(r => { if(r[0]) h[r[0]] = r[1] || ""; });
+  try { const v = localStorage.getItem("test_history"); if(v) Object.assign(h, JSON.parse(v)); } catch {}
+  return h;
+}
+
+async function saveTestHistory(key, month) {
+  await sheetAppend("test_history", [key, month]);
+  try {
+    const v = localStorage.getItem("test_history");
+    const h = v ? JSON.parse(v) : {};
+    h[key] = month;
+    localStorage.setItem("test_history", JSON.stringify(h));
+  } catch {}
+}
 
 // ── Shared norm (strips UTM/query params before comparing) ─────────
 const normUrl = v => {
@@ -107,7 +190,7 @@ function UrlInput({ value, onChange, history, allCurrentUrls, selfIndex }) {
     <div style={{display:"flex",flexDirection:"column",gap:4}}>
       <input value={value} onChange={onChange} placeholder="https://zoho.com/contracts/..." style={{...iStyle,borderColor:pastUsed?"#F59E0B":dupIdx>-1?"#E53E3E":undefined}}/>
       {pastUsed && <Warn>Already used in the <strong>{pastUsed}</strong> newsletter.</Warn>}
-      {!pastUsed && dupIdx>-1 && <Warn>This URL is already used in Section {dupIdx+1} of this newsletter.</Warn>}
+      {!pastUsed && dupIdx>-1 && <Warn>This URL is already used in <strong>{dupIdx===0?"the lead section":`Section ${dupIdx}`}</strong> of this newsletter.</Warn>}
     </div>
   );
 }
@@ -211,10 +294,10 @@ const HTAGS = {
 const ATAGS = { Legal:"#LegalOps",Sales:"#SalesOps",Procurement:"#Procurement #SupplyChain",HR:"#HRCompliance #HR",Finance:"#Finance",Healthcare:"#HealthTech #HealthcareAdmin",Construction:"#Construction",IT:"#ITManagement",General:"" };
 const SC = { color:B.blue, bg:"#E8EAFF", text:B.blueDk };
 const TYPE_INSTRUCTIONS = {
-  "Regular post":       "Write a regular social media post. LinkedIn: 3–5 sentences, narrative, informative, end with URL and hashtags. Twitter/X: 1–2 punchy sentences, max 1 emoji, max 3 hashtags.",
-  "Carousel":           "Write carousel slide copy. Start with a hook slide title, then 4–6 slides each with a bold heading and 1–2 sentence body, end with a CTA slide. Label each slide (Slide 1, Slide 2 etc).",
-  "Poll":               "Write a social media poll. Include a question and 3–4 poll options. Add a 1–2 sentence context caption before the poll.",
-  "Thread (Twitter/X)": "Write a Twitter/X thread. Start with a hook tweet (max 280 chars), then 4–6 numbered follow-up tweets, end with a CTA tweet. Label each tweet (1/, 2/ etc).",
+  "Regular post":       "Write a regular social media post. Keep it under 100 words total. Lead with a sharp, specific observation or pain point — not a generic statement about contracts. Make the reader feel seen before you introduce the solution. LinkedIn: 2–4 short sentences, narrative, end with URL and hashtags. Twitter/X: Completely different angle from LinkedIn — write it as a standalone thought. One punchy sentence or a short provocative question. Max 1 emoji, max 3 hashtags. Do not mirror the LinkedIn copy.",
+  "Carousel":           "Write carousel slide copy. Start with a hook slide title that names a specific problem, then 4–6 slides each with a bold heading and 1–2 sentence body, end with a CTA slide. Label each slide (Slide 1, Slide 2 etc).",
+  "Poll":               "Write a social media poll. Lead with a sharp observation or a real tension the audience faces. Include a question and 3–4 poll options. Add a 1–2 sentence context caption before the poll.",
+  "Thread (Twitter/X)": "Write a Twitter/X thread. Start with a hook tweet that states a specific, counterintuitive or provocative insight (max 280 chars). Then 4–6 numbered follow-up tweets that build the argument with specifics. End with a CTA tweet. Label each tweet (1/, 2/ etc). Keep each tweet tight — no filler.",
 };
 
 function SocialTool() {
@@ -223,7 +306,7 @@ function SocialTool() {
   const [published,setPublished]=useState(false);
   const [err,setErr]=useState("");
   const [urlHistory,setUrlHistory]=useState({});
-  useEffect(()=>{ const r=store.get("social-url-history"); if(r){try{setUrlHistory(JSON.parse(r.value));}catch{}} },[]);
+  useEffect(()=>{ loadSocialUrlHistory().then(h=>setUrlHistory(h)); },[]);
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const isThread=f.postType==="Thread (Twitter/X)";
   const effectiveFmt=isThread?"Twitter/X":f.format;
@@ -244,14 +327,23 @@ function SocialTool() {
     const utmRef=utmUrl?`\n\n---\nUTM REFERENCE\nTracking URL: ${utmUrl}`:"";
     return `You are a social media writer for Zoho Contracts (CLM software). ${src}
 Simple, clear, active voice. Short sentences. Sentence case. Non-salesy but informative.
+Lead with a specific observation or pain point — not a general statement. Make the reader feel seen first.
 Post type: ${f.postType} | Format: ${effectiveFmt} | Audience: ${f.audience}
 Hashtags: ${tags.join(" ")} | Notes: ${f.notes||"None"}
 ${TYPE_INSTRUCTIONS[f.postType]||""}
-${effectiveFmt==="Both"?"Write LinkedIn version first, then Twitter/X. Label each clearly.":""}
+${effectiveFmt==="Both"?"Write LinkedIn version first, then Twitter/X. The Twitter/X version must take a completely different angle — not a shortened version of LinkedIn.":""}
 ${!isRegular?`After the ${f.postType} copy, add a clearly labelled "Accompanying post" — a regular caption post for ${effectiveFmt} that teases the content and includes the URL and hashtags.`:""}
 Return only the post copy. No preamble.${utmRef}`;
   };
-  const saveUrl=()=>{ const newH={...urlHistory}; newH[normUrl(f.url)]=f.postType; setUrlHistory(newH); store.set("social-url-history",JSON.stringify(newH)); setPublished(true); };
+  const saveUrl=async()=>{
+    const key=normUrl(f.url);
+    const date=new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
+    const val=`${f.postType} on ${date}`;
+    const newH={...urlHistory}; newH[key]=val;
+    setUrlHistory(newH);
+    await saveSocialUrlHistory(key, f.postType, date);
+    setPublished(true);
+  };
   const generate=()=>{
     if(f.inputType==="url"&&!f.url){setErr("Please add a URL.");return;}
     if(f.inputType==="video"&&!f.videoDesc){setErr("Please describe the video.");return;}
@@ -285,9 +377,9 @@ Return only the post copy. No preamble.${utmRef}`;
         <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
           {POST_TYPES.map(t=>{
             const isT=t==="Thread (Twitter/X)";
-            return <div key={t} style={{display:"flex",flexDirection:"column",gap:3}}>
+            return <div key={t} style={{display:"flex",flexDirection:"column",gap:3,alignItems:"center"}}>
               <Chip val={t} active={f.postType===t} onClick={()=>s("postType",t)} color={B.blue} bg="#E8EAFF" text={B.blueDk}/>
-              {isT&&<span style={{fontSize:11,color:B.blue,paddingLeft:4,fontWeight:600}}>Twitter/X only</span>}
+              {isT&&<span style={{fontSize:11,color:B.blue,fontWeight:600}}>Twitter/X only</span>}
             </div>;
           })}
         </div>
@@ -452,8 +544,8 @@ function NewsletterTool() {
   const [urlHistory,setUrlHistory]=useState({});
   const [testHistory,setTestHistory]=useState({});
   useEffect(()=>{
-    const r1=store.get("newsletter-url-history"); if(r1){try{setUrlHistory(JSON.parse(r1.value));}catch{}}
-    const r2=store.get("newsletter-test-history"); if(r2){try{setTestHistory(JSON.parse(r2.value));}catch{}}
+    loadNewsletterUrlHistory().then(h=>setUrlHistory(h));
+    loadTestHistory().then(h=>setTestHistory(h));
   },[]);
   const checkUrl=url=>{if(!url||!url.trim())return null;return urlHistory[normUrl(url)]||null;};
   const testKey=()=>{const n=test.name.trim().toLowerCase();const c=test.company.trim().toLowerCase();return n&&c?`${n}||${c}`:null;};
@@ -505,13 +597,17 @@ Return only the newsletter. No preamble.${utmBlock}`;
     secs.forEach((sc,i)=>{if(sc.url){const sep=sc.url.includes("?")?"&":"?";utms.push({label:`Section ${i+1}${sc.type?" ("+sc.type+")":""}`,url:`${sc.url}${sep}utm_source=linkedin&utm_medium=newsletter&utm_campaign=${campaign}&utm_content=section-${i+1}`});}});
     return utms;
   };
-  const saveToMemory=()=>{
-    const urls=[leadUrl,...secs.map(sc=>sc.url)].filter(Boolean);
+  const saveToMemory=async()=>{
+    const urls=[leadUrl,...secs.map(sc=>sc.url)].filter(Boolean).map(u=>normUrl(u));
     const newH={...urlHistory};
-    urls.forEach(u=>{newH[normUrl(u)]=month;});
-    setUrlHistory(newH); store.set("newsletter-url-history",JSON.stringify(newH));
+    urls.forEach(u=>{newH[u]=month;});
+    setUrlHistory(newH);
+    await saveNewsletterUrlHistory(urls, month);
     const k=testKey();
-    if(k){const newTH={...testHistory};newTH[k]=month;setTestHistory(newTH);store.set("newsletter-test-history",JSON.stringify(newTH));}
+    if(k){
+      const newTH={...testHistory}; newTH[k]=month; setTestHistory(newTH);
+      await saveTestHistory(k, month);
+    }
     setPublished(true);
   };
   const generate=()=>{

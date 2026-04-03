@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Zoho Contracts — Content Tools</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #272D4E; min-height: 100vh; }
+  pre { font-family: inherit; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+// ── localStorage helpers ───────────────────────────────────────────
+const store = {
+  get: (key) => { try { const v = localStorage.getItem(key); return v ? { value: v } : null; } catch { return null; } },
+  set: (key, value) => { try { localStorage.setItem(key, value); } catch {} },
+};
+
+// ── Shared norm (strips UTM/query params before comparing) ─────────
+const normUrl = v => {
+  if(!v) return "";
+  try { return new URL(v.trim()).origin + new URL(v.trim()).pathname.replace(/\/$/,"").toLowerCase(); }
+  catch { return v.trim().toLowerCase().replace(/\?.*$/,"").replace(/\/$/,""); }
+};
+
+// ── Brand colours ─────────────────────────────────────────────────
+const B = {
+  blue:"#2B3CC1", blueDk:"#1A2478", navy:"#0F1535", pageBg:"#272D4E",
+  yellow:"#D4870A", yellowLt:"#FEF0CC", teal:"#00958A", tealLt:"#D0F5F2",
+  white:"#FFFFFF", offWhite:"#F4F5FC", grey:"#E8EAF6",
+};
+
+const TABS = [
+  { id:"social",     label:"Social media",       color:B.blue,   bg:"#E8EAFF",  text:B.blueDk  },
+  { id:"mailer",     label:"Cross-sell mailers",  color:B.teal,   bg:B.tealLt,   text:"#004D47" },
+  { id:"newsletter", label:"LinkedIn newsletter", color:B.yellow, bg:B.yellowLt, text:"#6B3F00" },
+];
+
+const FOOTER = `Want to learn more?\n• Request a demo: See how Zoho Contracts can optimize your contract processes and deliver value with a personalized demo.\nhttps://zma.page/request-demo-lnnews\n\n• Sign up for a free trial: Experience firsthand how Zoho Contracts improves contract management, saves time, and reduces risk for your business.\nhttps://zma.page/signup-LNnewsletter\n\n• Join our live webinars: Get a complete overview of Zoho Contracts and discover practical ways it can drive business growth.\nhttps://zma.page/webinar-LNnews`;
+
+const iStyle = { width:"100%", boxSizing:"border-box", fontSize:13, padding:"10px 13px", borderRadius:10, border:`1.5px solid ${B.grey}`, background:B.white, color:B.navy, outline:"none" };
+const taStyle = { ...iStyle, resize:"vertical" };
+
+function copyToClipboard(text) {
+  const el = document.createElement("textarea");
+  el.value = text; el.style.cssText = "position:fixed;opacity:0";
+  document.body.appendChild(el); el.focus(); el.select();
+  document.execCommand("copy"); document.body.removeChild(el);
+}
+
+function Label({ children, required }) {
+  return <label style={{fontSize:11,fontWeight:700,color:"#6B7280",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:5,display:"block"}}>{children}{required&&<span style={{color:"#E53E3E",marginLeft:3}}>*</span>}</label>;
+}
+function F({ label, required, children }) {
+  return <div style={{display:"flex",flexDirection:"column",gap:5}}><Label required={required}>{label}</Label>{children}</div>;
+}
+function Card({ title, subtitle, accent, icon, children }) {
+  return (
+    <div style={{background:B.white,border:`2px solid ${accent||B.grey}`,borderRadius:16,overflow:"hidden",boxShadow:"0 2px 8px rgba(43,60,193,0.06)"}}>
+      {title && (
+        <div style={{padding:"14px 20px",background:accent?`${accent}14`:B.offWhite,borderBottom:`1px solid ${accent||B.grey}22`,display:"flex",alignItems:"center",gap:10}}>
+          {icon && <span style={{fontSize:18}}>{icon}</span>}
+          <div>
+            <div style={{fontSize:14,fontWeight:700,color:accent||B.navy}}>{title}</div>
+            {subtitle && <div style={{fontSize:12,color:"#6B7280",marginTop:1}}>{subtitle}</div>}
+          </div>
+        </div>
+      )}
+      <div style={{padding:"18px 20px",display:"flex",flexDirection:"column",gap:14}}>{children}</div>
+    </div>
+  );
+}
+function Chip({ val, active, color, bg, text, onClick, disabled }) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{padding:"7px 16px",borderRadius:20,fontSize:12,fontWeight:active?700:500,cursor:disabled?"not-allowed":"pointer",border:active?`2px solid ${color}`:`1.5px solid ${B.grey}`,background:active?bg:B.white,color:active?text:"#6B7280",opacity:disabled?0.35:1,transition:"all 0.15s"}}>
+      {val}
+    </button>
+  );
+}
+function Btn({ children, onClick, disabled, variant, color, bg, text, small }) {
+  const v = variant||"outline";
+  const pad = small?"7px 14px":"11px 24px";
+  const styles = {
+    primary:{ background:color||B.blue, color:B.white, border:"none", boxShadow:`0 2px 8px ${(color||B.blue)}44` },
+    outline:{ background:B.white, color:"#4B5563", border:`1.5px solid ${B.grey}` },
+    accent: { background:bg||"#E8EAFF", color:text||B.blueDk, border:`2px solid ${color||B.blue}` },
+    ghost:  { background:"transparent", color:"#6B7280", border:`1px solid ${B.grey}` },
+    yellow: { background:B.yellow, color:B.navy, border:"none", boxShadow:`0 2px 8px ${B.yellow}66` },
+  };
+  return <button onClick={onClick} disabled={disabled} style={{...styles[v],padding:pad,borderRadius:10,fontSize:small?12:13,fontWeight:v==="primary"||v==="accent"||v==="yellow"?700:500,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.5:1,transition:"all 0.15s"}}>{children}</button>;
+}
+function Warn({ children }) {
+  return <div style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:12,color:"#7B3F00",background:"#FFFBEB",border:"1.5px solid #F59E0B",borderRadius:10,padding:"8px 12px",lineHeight:1.5}}><span style={{fontSize:14,flexShrink:0}}>⚠</span><span>{children}</span></div>;
+}
+function UrlInput({ value, onChange, history, allCurrentUrls, selfIndex }) {
+  const pastUsed = value && history[normUrl(value)];
+  const dupIdx = value && allCurrentUrls ? allCurrentUrls.findIndex((u,i) => i!==selfIndex && normUrl(u)===normUrl(value) && normUrl(value)!=="") : -1;
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+      <input value={value} onChange={onChange} placeholder="https://zoho.com/contracts/..." style={{...iStyle,borderColor:pastUsed?"#F59E0B":dupIdx>-1?"#E53E3E":undefined}}/>
+      {pastUsed && <Warn>Already used in the <strong>{pastUsed}</strong> newsletter.</Warn>}
+      {!pastUsed && dupIdx>-1 && <Warn>This URL is already used in Section {dupIdx+1} of this newsletter.</Warn>}
+    </div>
+  );
+}
+function UtmBlock({ utms, storageKey }) {
+  const [show, setShow] = useState(false);
+  const [copied, setCopied] = useState("");
+  const copy = (url, key) => { copyToClipboard(url); setCopied(key); setTimeout(()=>setCopied(""),2000); };
+  return (
+    <div style={{background:B.navy,borderRadius:16,overflow:"hidden",border:`2px solid ${B.yellow}`}}>
+      <div style={{padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:40,height:40,borderRadius:10,background:B.yellow,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🔗</div>
+          <div>
+            <div style={{fontSize:14,fontWeight:700,color:B.yellow}}>UTM tracking links</div>
+            <div style={{fontSize:12,color:"#94A3B8",marginTop:1}}>Paste into your Smart URL tool to track clicks</div>
+          </div>
+        </div>
+        <button onClick={()=>setShow(s=>!s)} style={{padding:"8px 16px",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer",background:show?B.yellow:"transparent",color:show?B.navy:B.yellow,border:`2px solid ${B.yellow}`,transition:"all 0.15s"}}>
+          {show?"Hide UTMs":"Generate UTMs"}
+        </button>
+      </div>
+      {show && (
+        <div style={{borderTop:`1px solid ${B.yellow}33`,padding:"16px 20px",display:"flex",flexDirection:"column",gap:12}}>
+          {utms.length===0 ? (
+            <div style={{fontSize:13,color:"#94A3B8"}}>Add URLs in the inputs above to generate UTMs.</div>
+          ) : utms.map((u,i)=>(
+            <div key={i} style={{background:"rgba(255,255,255,0.05)",borderRadius:10,padding:"12px 14px",display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{fontSize:11,fontWeight:700,color:B.teal,textTransform:"uppercase",letterSpacing:"0.08em"}}>{u.label}</div>
+              <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                <div style={{flex:1,fontSize:12,color:"#CBD5E1",wordBreak:"break-all",lineHeight:1.6,background:"rgba(0,0,0,0.2)",borderRadius:8,padding:"8px 10px"}}>{u.url}</div>
+                <button onClick={()=>copy(u.url,`${storageKey}-${i}`)} style={{flexShrink:0,padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:copied===`${storageKey}-${i}`?B.teal:B.yellow,color:B.navy,border:"none",whiteSpace:"nowrap",transition:"all 0.15s"}}>
+                  {copied===`${storageKey}-${i}`?"Copied!":"Copy"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+function PromptBox({ prompt, accentColor, accentBg, accentText, onReset, extra }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => { copyToClipboard(prompt); setCopied(true); setTimeout(()=>setCopied(false),2000); };
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{background:B.navy,borderRadius:16,overflow:"hidden",border:`2px solid ${accentColor}`}}>
+        <div style={{padding:"18px 20px",background:`${accentColor}22`,borderBottom:`1px solid ${accentColor}44`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <div>
+            <div style={{fontSize:18,fontWeight:800,color:B.white,marginBottom:2}}>✅ Your prompt is ready</div>
+            <div style={{fontSize:12,color:"#94A3B8"}}>Copy it below, then paste into Claude to generate your content</div>
+          </div>
+          <button onClick={copy} style={{flexShrink:0,padding:"12px 22px",borderRadius:12,fontSize:14,fontWeight:700,cursor:"pointer",border:"none",background:copied?B.teal:B.yellow,color:B.navy,transition:"all 0.15s",whiteSpace:"nowrap"}}>
+            {copied?"✓ Copied!":"Copy prompt"}
+          </button>
+        </div>
+        <div style={{padding:"16px 20px"}}>
+          <pre style={{fontSize:12,color:"#CBD5E1",whiteSpace:"pre-wrap",lineHeight:1.7,margin:0,maxHeight:200,overflow:"auto"}}>{prompt}</pre>
+        </div>
+      </div>
+      <div style={{background:B.offWhite,borderRadius:14,padding:"14px 18px",border:`1.5px solid ${B.grey}`,display:"flex",flexDirection:"column",gap:6}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#6B7280",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>How to use this prompt</div>
+        <div style={{fontSize:12,color:"#4B5563",lineHeight:1.9}}>
+          <span style={{fontWeight:700,color:B.navy}}>1.</span> Click <span style={{fontWeight:700,color:accentColor}}>Copy prompt</span> above&nbsp;&nbsp;
+          <span style={{fontWeight:700,color:B.navy}}>2.</span> Open Claude in a new tab&nbsp;&nbsp;
+          <span style={{fontWeight:700,color:B.navy}}>3.</span> Paste (Ctrl+V / Cmd+V) and hit Enter&nbsp;&nbsp;
+          <span style={{fontWeight:700,color:B.navy}}>4.</span> Claude generates your content
+        </div>
+      </div>
+      {extra}
+      <Btn variant="ghost" onClick={onReset}>← Edit inputs</Btn>
+    </div>
+  );
+}
+function MemoryBox({ saved, label, onSave, color }) {
+  return (
+    <div style={{background:saved?"#F0FDF4":B.offWhite,borderRadius:14,padding:"16px 20px",display:"flex",flexDirection:"column",gap:8,border:saved?"2px solid #22C55E":`2px solid ${B.grey}`}}>
+      <div style={{fontSize:11,fontWeight:700,color:saved?"#166534":"#6B7280",letterSpacing:"0.08em",textTransform:"uppercase"}}>URL memory</div>
+      {saved ? (
+        <div style={{fontSize:13,color:"#166534",fontWeight:500}}>✓ {label}</div>
+      ) : (
+        <React.Fragment>
+          <div style={{fontSize:12,color:"#6B7280",lineHeight:1.6}}>Once this is live, click below so URLs are flagged as duplicates in future editions.</div>
+          <Btn variant="accent" color={color} bg={`${color}14`} text={color} small onClick={onSave}>Mark as published</Btn>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+// ── SOCIAL ────────────────────────────────────────────────────────
+const POST_TYPES = ["Regular post","Carousel","Poll","Thread (Twitter/X)"];
+const FORMATS    = ["LinkedIn","Twitter/X","Both"];
+const AUDIENCES  = ["General","Legal","Sales","Procurement","HR","Finance","Healthcare","Construction","IT"];
+const HTAGS = {
+  "Regular post":       ["#ContractManagement","#CLM","#ZohoContracts","#LegalOps"],
+  "Carousel":           ["#ContractManagement","#CLM","#ZohoContracts","#LegalTech"],
+  "Poll":               ["#ContractManagement","#ZohoContracts"],
+  "Thread (Twitter/X)": ["#CLM","#ZohoContracts","#LegalOps"],
+};
+const ATAGS = { Legal:"#LegalOps",Sales:"#SalesOps",Procurement:"#Procurement #SupplyChain",HR:"#HRCompliance #HR",Finance:"#Finance",Healthcare:"#HealthTech #HealthcareAdmin",Construction:"#Construction",IT:"#ITManagement",General:"" };
+const SC = { color:B.blue, bg:"#E8EAFF", text:B.blueDk };
+const TYPE_INSTRUCTIONS = {
+  "Regular post":       "Write a regular social media post. LinkedIn: 3–5 sentences, narrative, informative, end with URL and hashtags. Twitter/X: 1–2 punchy sentences, max 1 emoji, max 3 hashtags.",
+  "Carousel":           "Write carousel slide copy. Start with a hook slide title, then 4–6 slides each with a bold heading and 1–2 sentence body, end with a CTA slide. Label each slide (Slide 1, Slide 2 etc).",
+  "Poll":               "Write a social media poll. Include a question and 3–4 poll options. Add a 1–2 sentence context caption before the poll.",
+  "Thread (Twitter/X)": "Write a Twitter/X thread. Start with a hook tweet (max 280 chars), then 4–6 numbered follow-up tweets, end with a CTA tweet. Label each tweet (1/, 2/ etc).",
+};
+
+function SocialTool() {
+  const [f,setF]=useState({inputType:"url",url:"",videoDesc:"",postType:"",format:"",audience:"General",notes:""});
+  const [prompt,setPrompt]=useState(null);
+  const [published,setPublished]=useState(false);
+  const [err,setErr]=useState("");
+  const [urlHistory,setUrlHistory]=useState({});
+  useEffect(()=>{ const r=store.get("social-url-history"); if(r){try{setUrlHistory(JSON.parse(r.value));}catch{}} },[]);
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const isThread=f.postType==="Thread (Twitter/X)";
+  const effectiveFmt=isThread?"Twitter/X":f.format;
+  const buildSocialUtm=()=>{
+    if(!f.url||f.inputType!=="url") return null;
+    const campaign=`zoho-contracts-${(f.postType||"post").toLowerCase().replace(/[\s/()]+/g,"-")}`;
+    const platform=effectiveFmt==="Both"?"social":effectiveFmt.toLowerCase().replace("/","-");
+    const sep=f.url.includes("?")?"&":"?";
+    return `${f.url}${sep}utm_source=${platform}&utm_medium=social&utm_campaign=${campaign}&utm_content=${f.audience.toLowerCase()}`;
+  };
+  const buildPrompt=()=>{
+    const tags=[...(HTAGS[f.postType]||[])];
+    if(ATAGS[f.audience])tags.splice(2,0,ATAGS[f.audience]);
+    const isRegular=f.postType==="Regular post";
+    const utmUrl=buildSocialUtm();
+    const srcUrl=utmUrl||f.url;
+    const src=f.inputType==="video"?`This post is for a video. Description: ${f.videoDesc}.`:`Visit this URL and use the page content: ${srcUrl}`;
+    const utmRef=utmUrl?`\n\n---\nUTM REFERENCE\nTracking URL: ${utmUrl}`:"";
+    return `You are a social media writer for Zoho Contracts (CLM software). ${src}
+Simple, clear, active voice. Short sentences. Sentence case. Non-salesy but informative.
+Post type: ${f.postType} | Format: ${effectiveFmt} | Audience: ${f.audience}
+Hashtags: ${tags.join(" ")} | Notes: ${f.notes||"None"}
+${TYPE_INSTRUCTIONS[f.postType]||""}
+${effectiveFmt==="Both"?"Write LinkedIn version first, then Twitter/X. Label each clearly.":""}
+${!isRegular?`After the ${f.postType} copy, add a clearly labelled "Accompanying post" — a regular caption post for ${effectiveFmt} that teases the content and includes the URL and hashtags.`:""}
+Return only the post copy. No preamble.${utmRef}`;
+  };
+  const saveUrl=()=>{ const newH={...urlHistory}; newH[normUrl(f.url)]=f.postType; setUrlHistory(newH); store.set("social-url-history",JSON.stringify(newH)); setPublished(true); };
+  const generate=()=>{
+    if(f.inputType==="url"&&!f.url){setErr("Please add a URL.");return;}
+    if(f.inputType==="video"&&!f.videoDesc){setErr("Please describe the video.");return;}
+    if(!f.postType){setErr("Please select a post type.");return;}
+    if(!effectiveFmt){setErr("Please select a format.");return;}
+    setErr("");setPrompt(buildPrompt());setPublished(false);
+  };
+  const utmUrl=buildSocialUtm();
+  const memExtra=f.inputType==="url"&&f.url?<MemoryBox saved={published} label={`URL marked as used for a ${f.postType}.`} onSave={saveUrl} color={B.blue}/>:null;
+  const utmExtra=utmUrl?<UtmBlock utms={[{label:"Tracking URL",url:utmUrl}]} storageKey="sc"/>:null;
+  if(prompt) return <PromptBox prompt={prompt} accentColor={B.blue} accentBg={SC.bg} accentText={B.blueDk} onReset={()=>{setPrompt(null);setPublished(false);}} extra={<React.Fragment>{memExtra}{utmExtra}</React.Fragment>}/>;
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <Card title="Content source" icon="🔗" accent={B.blue}>
+        <div style={{display:"flex",gap:8}}>
+          <Chip val="URL" active={f.inputType==="url"} onClick={()=>s("inputType","url")} color={B.blue} bg="#E8EAFF" text={B.blueDk}/>
+          <Chip val="Video" active={f.inputType==="video"} onClick={()=>s("inputType","video")} color={B.blue} bg="#E8EAFF" text={B.blueDk}/>
+        </div>
+        {f.inputType==="url"?(
+          <F label="URL" required>
+            <input value={f.url} onChange={e=>s("url",e.target.value)} placeholder="https://zoho.com/contracts/..." style={iStyle}/>
+            {f.url&&urlHistory[normUrl(f.url)]&&<Warn>Already used for a <strong>{urlHistory[normUrl(f.url)]}</strong>.</Warn>}
+          </F>
+        ):(
+          <F label="Describe the video content" required>
+            <textarea value={f.videoDesc} onChange={e=>s("videoDesc",e.target.value)} placeholder="e.g. A 2-minute walkthrough of Zoho Contracts' AI clause suggestion feature..." rows={3} style={taStyle}/>
+          </F>
+        )}
+      </Card>
+      <Card title="Post type" icon="📋" accent={B.blue}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+          {POST_TYPES.map(t=>{
+            const isT=t==="Thread (Twitter/X)";
+            return <div key={t} style={{display:"flex",flexDirection:"column",gap:3}}>
+              <Chip val={t} active={f.postType===t} onClick={()=>s("postType",t)} color={B.blue} bg="#E8EAFF" text={B.blueDk}/>
+              {isT&&<span style={{fontSize:11,color:B.blue,paddingLeft:4,fontWeight:600}}>Twitter/X only</span>}
+            </div>;
+          })}
+        </div>
+      </Card>
+      <Card title="Format & audience" icon="🎯" accent={B.blue}>
+        <F label="Format" required>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {FORMATS.map(t=><Chip key={t} val={t} active={effectiveFmt===t} onClick={()=>s("format",t)} disabled={isThread&&t!=="Twitter/X"} color={B.blue} bg="#E8EAFF" text={B.blueDk}/>)}
+          </div>
+          {isThread&&<div style={{fontSize:12,color:B.blueDk,marginTop:6,background:"#E8EAFF",padding:"6px 10px",borderRadius:8,fontWeight:500}}>Thread is Twitter/X only.</div>}
+        </F>
+        <F label="Target audience">
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{AUDIENCES.map(a=><Chip key={a} val={a} active={f.audience===a} onClick={()=>s("audience",a)} color={B.blue} bg="#E8EAFF" text={B.blueDk}/>)}</div>
+        </F>
+      </Card>
+      <Card title="Additional notes" subtitle="Optional — anything specific to highlight or avoid" icon="📝" accent={B.blue}>
+        <textarea value={f.notes} onChange={e=>s("notes",e.target.value)} placeholder="e.g. Mention the 75% cycle time reduction stat, keep it light..." rows={3} style={taStyle}/>
+      </Card>
+      {err&&<Warn>{err}</Warn>}
+      <Btn variant="primary" color={B.blue} onClick={generate}>Build prompt →</Btn>
+    </div>
+  );
+}
+
+// ── MAILER ────────────────────────────────────────────────────────
+const REGIONS=["US","IN","AU","All three"];
+const MTYPES=["Initial mailer","Follow-up mailer","Both"];
+const MC={color:B.teal,bg:B.tealLt,text:"#004D47"};
+const MAILER_META={
+  US:{credits:"$150",    subjectInit:"Explore Zoho Contracts for free | Earn $150 in Zoho Wallet credits",    subjectFU:"Your $150 Wallet Credits await | Sign up free for Zoho Contracts"},
+  IN:{credits:"₹10,000", subjectInit:"Explore Zoho Contracts for free | Earn ₹10,000 in Zoho Wallet credits", subjectFU:"Your ₹10,000 Wallet Credits await | Sign up free for Zoho Contracts"},
+  AU:{credits:"AUD200",  subjectInit:"Explore Zoho Contracts for free | Earn AUD200 in Zoho Wallet credits",  subjectFU:"Your AUD200 Wallet Credits await | Sign up free for Zoho Contracts"},
+};
+const emptyLinks={US:{init:"",fu:""},IN:{init:"",fu:""},AU:{init:"",fu:""}};
+
+function MailerTool() {
+  const [f,setF]=useState({src:"",keyPoints:"",region:"",mtype:"Both",webinarLinks:{...emptyLinks},redeemLinks:{...emptyLinks},hasIntg:false,intgDetail:""});
+  const [prompt,setPrompt]=useState(null);
+  const [err,setErr]=useState("");
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const setWL=(r,t,v)=>setF(p=>({...p,webinarLinks:{...p.webinarLinks,[r]:{...p.webinarLinks[r],[t]:v}}}));
+  const setRL=(r,t,v)=>setF(p=>({...p,redeemLinks:{...p.redeemLinks,[r]:{...p.redeemLinks[r],[t]:v}}}));
+  const regionsToShow=f.region==="All three"?["US","IN","AU"]:f.region?[f.region]:[];
+  const showFU=f.mtype==="Follow-up mailer"||f.mtype==="Both";
+  const showInit=f.mtype==="Initial mailer"||f.mtype==="Both";
+  const buildPrompt=()=>{
+    const regions=f.region==="All three"?["US","IN","AU"]:[f.region];
+    const types=f.mtype==="Both"?[false,true]:f.mtype==="Initial mailer"?[false]:[true];
+    const blocks=[]; const utmRef=[];
+    const campaign=`contracts-to-${(f.src||"product").toLowerCase().replace(/\s+/g,"-")}`;
+    const addUtm=(base,content)=>{if(!base||base==="[redeem link]"||base==="[webinar link]")return base;const sep=base.includes("?")?"&":"?";return`${base}${sep}utm_source=email&utm_medium=crosssell&utm_campaign=${campaign}&utm_content=${content}`;};
+    for(const r of regions) for(const isFU of types){
+      const m=MAILER_META[r]; const wl=f.webinarLinks[r]; const rl=f.redeemLinks[r];
+      const rawRedeem=isFU?(rl.fu||"[redeem link]"):(rl.init||"[redeem link]");
+      const rawWebinar=isFU?(wl.fu||"[webinar link]"):(wl.init||"[webinar link]");
+      const content=`${r.toLowerCase()}-${isFU?"followup":"initial"}`;
+      const redeemLink=addUtm(rawRedeem,`${content}-redeem`);
+      const webinarLink=addUtm(rawWebinar,`${content}-webinar`);
+      blocks.push(`--- ${isFU?"FOLLOW-UP":"INITIAL"} — ${r} ---\nSubject: ${isFU?m.subjectFU:m.subjectInit}\nCredits: ${m.credits} | Redeem link: ${redeemLink} | Webinar link: ${webinarLink}`);
+      if(rawRedeem!=="[redeem link]")utmRef.push(`Redeem — ${isFU?"Follow-up":"Initial"} (${r}): ${redeemLink}`);
+      if(rawWebinar!=="[webinar link]")utmRef.push(`Webinar — ${isFU?"Follow-up":"Initial"} (${r}): ${webinarLink}`);
+    }
+    const utmBlock=utmRef.length>0?`\n\n---\nUTM REFERENCE\n${utmRef.join("\n")}`:"";
+    return `You are writing cross-sell emails for Zoho Contracts sent to existing users of ${f.src}. Simple, clear, active voice. Short sentences. Warm but not pushy. Sentence case.
+Research ${f.src} — understand what it does and what contract-related pain points its users face. Use this for specific, relevant openers.
+Integration with Zoho Contracts: ${f.hasIntg?f.intgDetail:"Not specified — focus on general CLM value"}
+Key points to include: ${f.keyPoints||"Use best judgement based on the product"}
+
+Generate the following mailers. For each, use the exact subject line, credits amount, redeem link, and webinar link provided:
+
+${blocks.join("\n\n")}
+
+For each mailer write:
+Hello there,
+[1–2 sentence opener acknowledging what ${f.src} does, then the contract gap]
+[1 sentence introducing Zoho Contracts]
+[Section heading e.g. "Why ${f.src} users love Zoho Contracts"]
+• bullet 1 — specific to ${f.src} users
+• bullet 2
+• bullet 3
+To help you get started, we're offering [credits] in Zoho Wallet credits* when you sign up for a free trial of Zoho Contracts.
+[redeem link]
+*Your wallet credits will expire in 30 days.
+Want to see how it works? Join us for this free, live product webinar. We'll take you on a deep dive to demonstrate key features and showcase recent updates of Zoho Contracts. Our product experts will be available for a live Q&A.
+[webinar link]
+Regards,
+The Zoho Contracts Team
+
+Label each mailer clearly. Return only the emails. No preamble.${utmBlock}`;
+  };
+  const buildUtms=()=>{
+    const campaign=`contracts-to-${(f.src||"product").toLowerCase().replace(/\s+/g,"-")}`;
+    const utms=[];
+    regionsToShow.forEach(r=>{
+      [showInit&&"init",showFU&&"fu"].filter(Boolean).forEach(t=>{
+        const redeem=t==="init"?f.redeemLinks[r].init:f.redeemLinks[r].fu;
+        const webinar=t==="init"?f.webinarLinks[r].init:f.webinarLinks[r].fu;
+        const content=`${r.toLowerCase()}-${t==="init"?"initial":"followup"}`;
+        if(redeem){const sep=redeem.includes("?")?"&":"?";utms.push({label:`Redeem — ${t==="init"?"Initial":"Follow-up"} (${r})`,url:`${redeem}${sep}utm_source=email&utm_medium=crosssell&utm_campaign=${campaign}&utm_content=${content}-redeem`});}
+        if(webinar){const sep=webinar.includes("?")?"&":"?";utms.push({label:`Webinar — ${t==="init"?"Initial":"Follow-up"} (${r})`,url:`${webinar}${sep}utm_source=email&utm_medium=crosssell&utm_campaign=${campaign}&utm_content=${content}-webinar`});}
+      });
+    });
+    return utms;
+  };
+  const generate=()=>{
+    if(!f.src){setErr("Please enter the source product name.");return;}
+    if(!f.region){setErr("Please select a region.");return;}
+    if(!f.mtype){setErr("Please select a mailer type.");return;}
+    setErr("");setPrompt(buildPrompt());
+  };
+  if(prompt) return <PromptBox prompt={prompt} accentColor={MC.color} accentBg={MC.bg} accentText={MC.text} onReset={()=>setPrompt(null)} extra={<UtmBlock utms={buildUtms()} storageKey="ml"/>}/>;
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <Card title="Source product" icon="📦" accent={MC.color}>
+        <F label="Product name" required><input value={f.src} onChange={e=>s("src",e.target.value)} placeholder="e.g. Zoho CRM, Zoho Recruit, Zoho People" style={iStyle}/></F>
+        <label style={{display:"flex",alignItems:"flex-start",gap:10,fontSize:13,cursor:"pointer"}}>
+          <input type="checkbox" checked={f.hasIntg} onChange={e=>s("hasIntg",e.target.checked)} style={{width:16,height:16,marginTop:2}}/>
+          <span style={{color:"#374151"}}>Has a direct integration with Zoho Contracts</span>
+        </label>
+        {f.hasIntg&&<F label="Integration detail"><input value={f.intgDetail} onChange={e=>s("intgDetail",e.target.value)} placeholder="e.g. Raise contract requests from Deals in Zoho CRM" style={iStyle}/></F>}
+        <F label="Key points to include (optional)"><textarea value={f.keyPoints} onChange={e=>s("keyPoints",e.target.value)} placeholder="e.g. Highlight AI clause suggestions, mention free Zoho Sign inclusion..." rows={3} style={taStyle}/></F>
+      </Card>
+      <Card title="Region & type" icon="🌏" accent={MC.color}>
+        <F label="Region" required><div style={{display:"flex",flexWrap:"wrap",gap:8}}>{REGIONS.map(r=><Chip key={r} val={r} active={f.region===r} onClick={()=>s("region",r)} {...MC}/>)}</div></F>
+        <F label="Mailer type" required><div style={{display:"flex",flexWrap:"wrap",gap:8}}>{MTYPES.map(t=><Chip key={t} val={t} active={f.mtype===t} onClick={()=>s("mtype",t)} {...MC}/>)}</div></F>
+      </Card>
+      {regionsToShow.length>0&&(
+        <Card title="Webinar & redeem links" subtitle="Add region-specific links — different for initial and follow-up" icon="🔗" accent={MC.color}>
+          {regionsToShow.map(r=>(
+            <div key={r} style={{background:B.offWhite,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10,border:`1.5px solid ${B.grey}`}}>
+              <div style={{fontSize:12,fontWeight:700,color:MC.color,textTransform:"uppercase",letterSpacing:"0.08em"}}>{r}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                {showInit&&<F label="Webinar — initial"><input value={f.webinarLinks[r].init} onChange={e=>setWL(r,"init",e.target.value)} placeholder="https://meet.zoho.in/..." style={iStyle}/></F>}
+                {showFU&&<F label="Webinar — follow-up"><input value={f.webinarLinks[r].fu} onChange={e=>setWL(r,"fu",e.target.value)} placeholder="https://meet.zoho.in/..." style={iStyle}/></F>}
+                {showInit&&<F label="Redeem link — initial"><input value={f.redeemLinks[r].init} onChange={e=>setRL(r,"init",e.target.value)} placeholder="https://zoho.com/contracts/..." style={iStyle}/></F>}
+                {showFU&&<F label="Redeem link — follow-up"><input value={f.redeemLinks[r].fu} onChange={e=>setRL(r,"fu",e.target.value)} placeholder="https://zoho.com/contracts/..." style={iStyle}/></F>}
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+      {err&&<Warn>{err}</Warn>}
+      <Btn variant="primary" color={MC.color} onClick={generate}>Build prompt →</Btn>
+    </div>
+  );
+}
+
+// ── NEWSLETTER ────────────────────────────────────────────────────
+const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const SEC_TYPES=["Blog / article","Expert Talks","Case study","Product update","Ebook / resource","Webinar recap","Industry insight"];
+const ESEC={type:"",url:"",keyPoint:""};
+const NC={color:B.yellow,bg:B.yellowLt,text:"#6B3F00"};
+
+function NewsletterTool() {
+  const [month,setMonth]=useState("");
+  const [leadUrl,setLeadUrl]=useState("");
+  const [secs,setSecs]=useState([{...ESEC},{...ESEC}]);
+  const [test,setTest]=useState({quote:"",name:"",title:"",company:""});
+  const [prompt,setPrompt]=useState(null);
+  const [published,setPublished]=useState(false);
+  const [err,setErr]=useState("");
+  const [urlHistory,setUrlHistory]=useState({});
+  const [testHistory,setTestHistory]=useState({});
+  useEffect(()=>{
+    const r1=store.get("newsletter-url-history"); if(r1){try{setUrlHistory(JSON.parse(r1.value));}catch{}}
+    const r2=store.get("newsletter-test-history"); if(r2){try{setTestHistory(JSON.parse(r2.value));}catch{}}
+  },[]);
+  const checkUrl=url=>{if(!url||!url.trim())return null;return urlHistory[normUrl(url)]||null;};
+  const testKey=()=>{const n=test.name.trim().toLowerCase();const c=test.company.trim().toLowerCase();return n&&c?`${n}||${c}`:null;};
+  const checkTest=()=>{const k=testKey();return k?testHistory[k]||null:null;};
+  const upd=(i,k,v)=>setSecs(s=>s.map((x,idx)=>idx===i?{...x,[k]:v}:x));
+  const move=(i,dir)=>setSecs(s=>{const a=[...s];const b=a[i+dir];a[i+dir]=a[i];a[i]=b;return a;});
+  const allUrls=[leadUrl,...secs.map(s=>s.url)];
+  const getDupWarn=(url,selfIdx)=>{
+    if(!url)return null;
+    const dupIdx=allUrls.findIndex((u,i)=>i!==selfIdx&&normUrl(u)===normUrl(url)&&normUrl(url)!=="");
+    if(dupIdx>-1)return `Same URL as ${dupIdx===0?"the lead section":`Section ${dupIdx}`} in this newsletter.`;
+    return null;
+  };
+  const buildPrompt=()=>{
+    const campaign=month?`${month.toLowerCase()}-2026`:"newsletter-2026";
+    const addUtm=(url,content)=>{if(!url)return url;const sep=url.includes("?")?"&":"?";return`${url}${sep}utm_source=linkedin&utm_medium=newsletter&utm_campaign=${campaign}&utm_content=${content}`;};
+    const leadUtm=addUtm(leadUrl,"lead");
+    const secUtms=secs.map((sc,i)=>addUtm(sc.url,`section-${i+1}`));
+    const utmRef=[];
+    if(leadUrl)utmRef.push(`Lead section: ${leadUtm}`);
+    secs.forEach((sc,i)=>{if(sc.url)utmRef.push(`Section ${i+1}${sc.type?" ("+sc.type+")":""}: ${secUtms[i]}`);});
+    const utmBlock=utmRef.length>0?`\n\n---\nUTM REFERENCE\n${utmRef.join("\n")}`:"";
+    return `Write a LinkedIn newsletter for Zoho Contracts (CLM software) for ${month} 2026.
+Simple, clear, active voice. Short sentences. Sentence case. Warm but professional.
+
+LEAD SECTION
+URL: ${leadUtm}
+Visit this URL. Use the page title as heading (start with ##), extract a key stat or hook, write 1–2 sentences of description, end with: 👉 [CTA text] — ${leadUtm}
+
+CONTENT SECTIONS
+${secs.map((sc,i)=>`Section ${i+1}: Type: ${sc.type||"Blog / article"} | URL: ${secUtms[i]}${sc.keyPoint?` | Highlight: ${sc.keyPoint}`:""}`).join("\n")}
+For each section: visit the URL, write a ## heading (type rules: "Expert Talks"→#ExpertTalks | "Case study"→customer name | "Product update"→What's up at Zoho Contracts? | others→topic from page), then 2–3 short sentences, end with 👉 Read more / Read the full article / Watch now — [section URL]
+
+TESTIMONIAL
+"${test.quote||"[customer quote]"}"
+—${test.name||"Name"}, ${test.title||"Title"}, ${test.company||"Company"}
+Format as: #FromOurCustomers
+
+FOOTER (include exactly as written)
+${FOOTER}
+
+Separate each section with ---
+Return only the newsletter. No preamble.${utmBlock}`;
+  };
+  const buildUtms=()=>{
+    const campaign=month?`${month.toLowerCase()}-2026`:"newsletter-2026";
+    const utms=[];
+    if(leadUrl){const sep=leadUrl.includes("?")?"&":"?";utms.push({label:"Lead section",url:`${leadUrl}${sep}utm_source=linkedin&utm_medium=newsletter&utm_campaign=${campaign}&utm_content=lead`});}
+    secs.forEach((sc,i)=>{if(sc.url){const sep=sc.url.includes("?")?"&":"?";utms.push({label:`Section ${i+1}${sc.type?" ("+sc.type+")":""}`,url:`${sc.url}${sep}utm_source=linkedin&utm_medium=newsletter&utm_campaign=${campaign}&utm_content=section-${i+1}`});}});
+    return utms;
+  };
+  const saveToMemory=()=>{
+    const urls=[leadUrl,...secs.map(sc=>sc.url)].filter(Boolean);
+    const newH={...urlHistory};
+    urls.forEach(u=>{newH[normUrl(u)]=month;});
+    setUrlHistory(newH); store.set("newsletter-url-history",JSON.stringify(newH));
+    const k=testKey();
+    if(k){const newTH={...testHistory};newTH[k]=month;setTestHistory(newTH);store.set("newsletter-test-history",JSON.stringify(newTH));}
+    setPublished(true);
+  };
+  const generate=()=>{
+    if(!month){setErr("Please select an edition month.");return;}
+    if(!leadUrl){setErr("Please add a lead section URL.");return;}
+    const mi=secs.findIndex(sc=>!sc.url);
+    if(mi!==-1){setErr(`Please add a URL for Section ${mi+1}.`);return;}
+    setErr("");setPrompt(buildPrompt());setPublished(false);
+  };
+  const nlExtra=(
+    <React.Fragment>
+      <MemoryBox saved={published} label={`URLs and testimonial marked as used in the ${month} newsletter.`} onSave={saveToMemory} color={NC.color}/>
+      <UtmBlock utms={buildUtms()} storageKey="nl"/>
+    </React.Fragment>
+  );
+  if(prompt) return <PromptBox prompt={prompt} accentColor={NC.color} accentBg={NC.bg} accentText={NC.text} onReset={()=>{setPrompt(null);setPublished(false);}} extra={nlExtra}/>;
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <Card title="Edition" icon="📅" accent={NC.color}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{MONTHS.map(m=><Chip key={m} val={m} active={month===m} onClick={()=>setMonth(m)} {...NC}/>)}</div>
+      </Card>
+      <Card title="Lead section" subtitle="Paste the URL — heading and content will be generated automatically" icon="⭐" accent={NC.color}>
+        <F label="URL" required>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <input value={leadUrl} onChange={e=>setLeadUrl(e.target.value)} placeholder="https://zoho.com/contracts/..." style={{...iStyle,borderColor:checkUrl(leadUrl)?"#F59E0B":getDupWarn(leadUrl,0)?"#E53E3E":undefined}}/>
+            {checkUrl(leadUrl)&&<Warn>Already used in the <strong>{checkUrl(leadUrl)}</strong> newsletter.</Warn>}
+            {!checkUrl(leadUrl)&&getDupWarn(leadUrl,0)&&<Warn>{getDupWarn(leadUrl,0)}</Warn>}
+          </div>
+        </F>
+      </Card>
+      <Card title="Content sections" subtitle="Add a URL per section — heading, content and CTA generated from each page" icon="📄" accent={NC.color}>
+        <div style={{display:"flex",justifyContent:"flex-end"}}>{secs.length<4&&<Btn small variant="outline" onClick={()=>setSecs(s=>[...s,{...ESEC}])}>+ Add section</Btn>}</div>
+        {secs.map((sec,i)=>(
+          <div key={i} style={{background:B.offWhite,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10,border:`1.5px solid ${B.grey}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:12,fontWeight:700,color:NC.text,textTransform:"uppercase",letterSpacing:"0.08em"}}>Section {i+1}</span>
+              <div style={{display:"flex",gap:6}}>
+                {i>0&&<Btn small variant="outline" onClick={()=>move(i,-1)}>↑</Btn>}
+                {i<secs.length-1&&<Btn small variant="outline" onClick={()=>move(i,1)}>↓</Btn>}
+                {secs.length>1&&<Btn small variant="ghost" onClick={()=>setSecs(s=>s.filter((_,idx)=>idx!==i))}>Remove</Btn>}
+              </div>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{SEC_TYPES.map(t=><Chip key={t} val={t} active={sec.type===t} onClick={()=>upd(i,"type",t)} {...NC}/>)}</div>
+            <F label="URL" required>
+              <UrlInput value={sec.url} onChange={e=>upd(i,"url",e.target.value)} history={urlHistory} allCurrentUrls={allUrls} selfIndex={i+1}/>
+            </F>
+            <F label="Key point (optional)"><input value={sec.keyPoint} onChange={e=>upd(i,"keyPoint",e.target.value)} placeholder="e.g. Highlight the 75% cycle time reduction stat" style={iStyle}/></F>
+          </div>
+        ))}
+      </Card>
+      <Card title="#FromOurCustomers" icon="💬" accent="#D4537E">
+        <textarea value={test.quote} onChange={e=>setTest(t=>({...t,quote:e.target.value}))} placeholder="Customer quote" rows={3} style={taStyle}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+          <F label="Name"><input value={test.name} onChange={e=>setTest(t=>({...t,name:e.target.value}))} placeholder="Name" style={iStyle}/></F>
+          <F label="Title"><input value={test.title} onChange={e=>setTest(t=>({...t,title:e.target.value}))} placeholder="Title" style={iStyle}/></F>
+          <F label="Company"><input value={test.company} onChange={e=>setTest(t=>({...t,company:e.target.value}))} placeholder="Company" style={iStyle}/></F>
+        </div>
+        {checkTest()&&<Warn>Testimonial from <strong>{test.name}{test.company?`, ${test.company}`:""}</strong> already used in the <strong>{checkTest()}</strong> newsletter.</Warn>}
+      </Card>
+      <Card title="Standard footer" subtitle="Auto-included with all three links" icon="📌" accent={B.navy}>
+        <div style={{background:B.navy,borderRadius:10,padding:"14px 16px"}}>
+          <pre style={{fontSize:12,color:"#CBD5E1",whiteSpace:"pre-wrap",lineHeight:1.8,margin:0}}>{FOOTER}</pre>
+        </div>
+      </Card>
+      {err&&<Warn>{err}</Warn>}
+      <Btn variant="primary" color={NC.color} onClick={generate}>Build prompt →</Btn>
+    </div>
+  );
+}
+
+// ── MAIN ──────────────────────────────────────────────────────────
+function App() {
+  const [active,setActive]=useState("social");
+  return (
+    <div style={{fontFamily:"-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",maxWidth:720,margin:"0 auto",padding:"0 16px 48px"}}>
+      <div style={{background:B.navy,borderRadius:"0 0 24px 24px",padding:"24px 24px 28px",marginBottom:24,position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",right:-20,top:-20,width:120,height:120,borderRadius:"50%",border:`12px solid ${B.yellow}`,opacity:0.3}}/>
+        <div style={{position:"absolute",right:60,bottom:-30,width:80,height:80,borderRadius:"50%",border:`8px solid ${B.teal}`,opacity:0.25}}/>
+        <div style={{fontSize:11,fontWeight:700,color:B.teal,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:6}}>Zoho Contracts</div>
+        <div style={{fontSize:26,fontWeight:800,color:B.white,marginBottom:4}}>Content tools</div>
+        <div style={{fontSize:13,color:"#94A3B8"}}>Build prompts for social posts, mailers, and newsletters</div>
+      </div>
+      <div style={{paddingBottom:24}}>
+        <div style={{display:"flex",gap:6,padding:"6px",background:B.navy,borderRadius:16,width:"100%"}}>
+          {TABS.map(t=>{const on=active===t.id;return(
+            <button key={t.id} onClick={()=>setActive(t.id)} style={{flex:1,padding:"14px 10px",borderRadius:12,fontSize:14,fontWeight:on?800:500,cursor:"pointer",border:on?`2px solid ${t.color}`:"2px solid transparent",background:on?t.bg:"transparent",color:on?t.text:"#94A3B8",transition:"all 0.15s",boxShadow:on?`0 2px 10px ${t.color}55`:"none"}}>
+              {t.label}
+            </button>
+          );})}
+        </div>
+      </div>
+      {active==="social"&&<SocialTool/>}
+      {active==="mailer"&&<MailerTool/>}
+      {active==="newsletter"&&<NewsletterTool/>}
+    </div>
+  );
+}
+
+ReactDOM.render(<App/>, document.getElementById("root"));
+</script>
+</body>
+</html>
